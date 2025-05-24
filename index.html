@@ -264,6 +264,7 @@
             if (url.endsWith('.mpd')) return 'application/dash+xml';
             if (url.endsWith('.mp4')) return 'video/mp4';
             if (url.endsWith('.webm')) return 'video/webm';
+            if (url.endsWith('.mkv')) return 'video/x-matroska';
             if (url.endsWith('.ogg')) return 'video/ogg';
             if (url.endsWith('.avi')) return 'video/avi'; // Mungkin tidak selalu didukung
             if (url.endsWith('.mov')) return 'video/quicktime'; // Mungkin tidak selalu didukung
