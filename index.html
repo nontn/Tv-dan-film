@@ -1,24 +1,49 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Video.js M3U Player</title>
+    <title>Video.js M3U & WebTorrent Player</title>
     <link href="https://vjs.zencdn.net/8.10.0/video-js.css" rel="stylesheet" />
     <style>
         body { font-family: sans-serif; display: flex; }
         #video-container { flex: 2; margin-right: 20px; }
-        #playlist { flex: 1; border-left: 1px solid #ccc; padding-left: 20px; max-height: 80vh; overflow-y: auto; }
-        .playlist-item {
+        #sidebar { flex: 1; border-left: 1px solid #ccc; padding-left: 20px; max-height: 80vh; overflow-y: auto; }
+        .playlist-item, .torrent-item {
             padding: 10px;
             cursor: pointer;
             border-bottom: 1px solid #eee;
             transition: background-color 0.2s ease;
         }
-        .playlist-item:hover {
+        .playlist-item:hover, .torrent-item:hover {
             background-color: #f0f0f0;
         }
-        .playlist-item.active {
+        .playlist-item.active, .torrent-item.active {
             background-color: #e0e0e0;
             font-weight: bold;
+        }
+        #torrent-input-section {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+        #torrent-input {
+            width: calc(100% - 12px);
+            padding: 8px;
+            margin-bottom: 10px;
+        }
+        #torrent-button {
+            padding: 8px 15px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            cursor: pointer;
+        }
+        #torrent-button:hover {
+            background-color: #0056b3;
+        }
+        #torrent-status {
+            margin-top: 10px;
+            font-size: 0.9em;
+            color: #555;
         }
     </style>
 </head>
@@ -36,17 +61,36 @@
             </video>
     </div>
 
-    <div id="playlist">
-        <h2>Pilih Saluran</h2>
-        <p>Memuat daftar putar...</p>
+    <div id="sidebar">
+        <div id="playlist">
+            <h2>Pilih Saluran (M3U)</h2>
+            <p>Memuat daftar putar...</p>
+        </div>
+
+        <div id="torrent-input-section">
+            <h2>Putar dari Torrent</h2>
+            <input type="text" id="torrent-input" placeholder="Masukkan link magnet atau hash torrent">
+            <button id="torrent-button">Putar Torrent</button>
+            <div id="torrent-status"></div>
+            <div id="torrent-files"></div>
+        </div>
     </div>
 
     <script src="https://vjs.zencdn.net/8.10.0/video.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/webtorrent@1.1.0/webtorrent.min.js"></script>
     <script>
         const player = videojs('my-video');
         const playlistContainer = document.getElementById('playlist');
+        const torrentInput = document.getElementById('torrent-input');
+        const torrentButton = document.getElementById('torrent-button');
+        const torrentStatus = document.getElementById('torrent-status');
+        const torrentFilesContainer = document.getElementById('torrent-files');
 
-        // Fungsi untuk memuat dan mem-parsing file M3U
+        // Inisialisasi WebTorrent client
+        const client = new WebTorrent();
+
+        // --- Fungsi untuk M3U Playlist (Sama seperti sebelumnya) ---
+
         async function loadM3UPlaylist(m3uUrl) {
             try {
                 const response = await fetch(m3uUrl);
@@ -62,8 +106,6 @@
             }
         }
 
-        // Fungsi sederhana untuk mem-parsing M3U (menyesuaikan dengan format M3U Anda)
-        // Ini adalah contoh untuk M3U sederhana, bukan HLS.
         function parseM3U(m3uContent) {
             const lines = m3uContent.split('\n');
             const videos = [];
@@ -72,77 +114,180 @@
             for (const line of lines) {
                 const trimmedLine = line.trim();
                 if (trimmedLine.startsWith('#EXTINF')) {
-                    // Coba ekstrak nama saluran dari EXTINF
                     const match = trimmedLine.match(/,(.*)$/);
                     if (match && match[1]) {
                         currentName = match[1].trim();
                     }
                 } else if (trimmedLine && !trimmedLine.startsWith('#')) {
-                    // Ini adalah URL video
                     videos.push({
                         name: currentName,
-                        url: trimmedLine
+                        url: trimmedLine,
+                        type: 'm3u' // Menandai tipe sumber
                     });
-                    currentName = 'Unknown Channel'; // Reset untuk entri berikutnya
+                    currentName = 'Unknown Channel';
                 }
             }
             return videos;
         }
 
-        // Fungsi untuk membangun daftar putar di UI
         function buildPlaylistUI(videos) {
-            playlistContainer.innerHTML = '<h2>Pilih Saluran</h2>'; // Bersihkan konten lama
+            playlistContainer.innerHTML = '<h2>Pilih Saluran (M3U)</h2>';
             videos.forEach((video, index) => {
                 const item = document.createElement('div');
                 item.classList.add('playlist-item');
                 item.textContent = video.name;
-                item.dataset.url = video.url; // Simpan URL di data attribute
+                item.dataset.url = video.url;
 
                 item.addEventListener('click', () => {
-                    // Hapus kelas 'active' dari semua item
-                    document.querySelectorAll('.playlist-item').forEach(el => el.classList.remove('active'));
-                    // Tambahkan kelas 'active' ke item yang diklik
+                    document.querySelectorAll('.playlist-item, .torrent-item').forEach(el => el.classList.remove('active'));
                     item.classList.add('active');
 
                     player.src({
                         src: video.url,
-                        type: guessMimeType(video.url) // Tebak tipe MIME
+                        type: guessMimeType(video.url)
                     });
                     player.load();
                     player.play();
+                    torrentStatus.textContent = ''; // Clear torrent status
                 });
                 playlistContainer.appendChild(item);
             });
 
-            // Otomatis putar video pertama jika ada
             if (videos.length > 0) {
-                // Simulasikan klik pada item pertama untuk memutar secara otomatis
                 const firstItem = document.querySelector('.playlist-item');
                 if (firstItem) {
-                    firstItem.click();
+                    //firstItem.click(); // Jangan otomatis putar M3U jika ada torrent
                 }
             }
         }
 
-        // Fungsi sederhana untuk menebak tipe MIME berdasarkan ekstensi file
+        // --- Fungsi untuk WebTorrent ---
+
+        torrentButton.addEventListener('click', () => {
+            const magnetLink = torrentInput.value.trim();
+            if (magnetLink) {
+                playTorrent(magnetLink);
+            } else {
+                torrentStatus.textContent = 'Masukkan link magnet atau hash torrent.';
+                torrentStatus.style.color = 'red';
+            }
+        });
+
+        function playTorrent(magnetLink) {
+            torrentStatus.textContent = 'Menghubungkan ke peer dan mengunduh metadata...';
+            torrentStatus.style.color = '#555';
+            torrentFilesContainer.innerHTML = ''; // Bersihkan daftar file torrent sebelumnya
+            document.querySelectorAll('.playlist-item, .torrent-item').forEach(el => el.classList.remove('active'));
+
+            // Hentikan torrent yang sedang berjalan jika ada
+            client.torrents.forEach(t => t.destroy());
+
+            client.add(magnetLink, torrent => {
+                torrentStatus.textContent = 'Menemukan file video...';
+                torrentStatus.style.color = '#555';
+
+                // Sort files by size to prioritize larger video files
+                const videoFiles = torrent.files
+                    .filter(file => file.name.match(/\.(mp4|mkv|webm|ogg|avi|mov)$/i))
+                    .sort((a, b) => b.length - a.length); // Largest first
+
+                if (videoFiles.length > 0) {
+                    torrentStatus.textContent = 'Memilih video. Klik untuk memutar.';
+                    torrentStatus.style.color = 'green';
+                    
+                    videoFiles.forEach(file => {
+                        const fileItem = document.createElement('div');
+                        fileItem.classList.add('torrent-item');
+                        fileItem.textContent = `${file.name} (${formatBytes(file.length)})`;
+                        torrentFilesContainer.appendChild(fileItem);
+
+                        fileItem.addEventListener('click', () => {
+                            document.querySelectorAll('.playlist-item, .torrent-item').forEach(el => el.classList.remove('active'));
+                            fileItem.classList.add('active');
+                            torrentStatus.textContent = `Streaming ${file.name}...`;
+                            torrentStatus.style.color = '#007bff';
+
+                            // Streaming file ke Video.js
+                            file.appendTo(player.el(), err => {
+                                if (err) {
+                                    console.error("Gagal streaming torrent:", err);
+                                    torrentStatus.textContent = `Gagal memutar ${file.name}. Error: ${err.message}`;
+                                    torrentStatus.style.color = 'red';
+                                    return;
+                                }
+                                player.play(); // Mulai putar setelah elemen video diisi
+                            });
+
+                            // Update status download/upload
+                            torrent.on('download', () => {
+                                torrentStatus.textContent = `Streaming ${file.name}... Downloaded: ${formatBytes(torrent.downloaded)} (${Math.round(torrent.progress * 100)}%) / Speed: ${formatBytes(torrent.downloadSpeed)}/s`;
+                            });
+                            torrent.on('upload', () => {
+                                // Anda bisa menampilkan upload speed juga jika diinginkan
+                            });
+                        });
+                    });
+
+                    // Auto-play the largest video file by simulating a click
+                    if (torrentFilesContainer.children.length > 0) {
+                        torrentFilesContainer.children[0].click();
+                    }
+
+                } else {
+                    torrentStatus.textContent = 'Tidak ada file video yang ditemukan di torrent ini.';
+                    torrentStatus.style.color = 'orange';
+                }
+
+                torrent.on('done', () => {
+                    torrentStatus.textContent = `Torrent selesai diunduh: ${torrent.name}`;
+                    torrentStatus.style.color = 'green';
+                });
+
+                torrent.on('error', err => {
+                    console.error("Torrent error:", err);
+                    torrentStatus.textContent = `Error torrent: ${err.message}`;
+                    torrentStatus.style.color = 'red';
+                });
+            });
+
+            client.on('error', err => {
+                console.error("WebTorrent client error:", err);
+                torrentStatus.textContent = `Error klien WebTorrent: ${err.message}`;
+                torrentStatus.style.color = 'red';
+            });
+        }
+
+        // --- Helper Functions ---
+
         function guessMimeType(url) {
-            if (url.endsWith('.m3u8')) return 'application/x-mpegURL'; // Untuk HLS
-            if (url.endsWith('.mpd')) return 'application/dash+xml'; // Untuk MPEG-DASH
+            if (url.endsWith('.m3u8')) return 'application/x-mpegURL';
+            if (url.endsWith('.mpd')) return 'application/dash+xml';
             if (url.endsWith('.mp4')) return 'video/mp4';
             if (url.endsWith('.webm')) return 'video/webm';
             if (url.endsWith('.ogg')) return 'video/ogg';
+            if (url.endsWith('.avi')) return 'video/avi'; // Mungkin tidak selalu didukung
+            if (url.endsWith('.mov')) return 'video/quicktime'; // Mungkin tidak selalu didukung
             // Tambahkan tipe lain sesuai kebutuhan
-            return ''; // Biarkan Video.js menebak jika tidak yakin
+            return '';
         }
 
-        // Muat daftar putar saat halaman dimuat
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        // --- Inisialisasi saat DOM siap ---
         document.addEventListener('DOMContentLoaded', () => {
             const m3uFileUrl = 'playlist.m3u'; // Ganti dengan path ke file M3U Anda
             loadM3UPlaylist(m3uFileUrl).then(videos => {
                 if (videos.length > 0) {
                     buildPlaylistUI(videos);
                 } else {
-                    playlistContainer.innerHTML = '<p>Tidak ada saluran ditemukan di daftar putar.</p>';
+                    playlistContainer.innerHTML = '<p>Tidak ada saluran M3U ditemukan.</p>';
                 }
             });
         });
