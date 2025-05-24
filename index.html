@@ -283,7 +283,7 @@
 
         // --- Inisialisasi saat DOM siap ---
         document.addEventListener('DOMContentLoaded', () => {
-            const m3uFileUrl = 'https://iptv-org.github.io/iptv/countries/kr.m3u'; // Ganti dengan path ke file M3U Anda
+            const m3uFileUrl = 'https://iptv-org.github.io/iptv/categories/animation.m3u'; // Ganti dengan path ke file M3U Anda
             loadM3UPlaylist(m3uFileUrl).then(videos => {
                 if (videos.length > 0) {
                     buildPlaylistUI(videos);
